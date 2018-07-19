@@ -27,6 +27,12 @@ enum {
 	MOTOR_STOP_HARD
 };
 
+/*
+ * Liebe Julia. Spiel nicht an der Reihenfolge rum. Diese Reihenfolge braucht die
+ * Gamecube. Und falls du dich fragst, wozu die Origin-Merker gut sind oder err_latch
+ * und err_status... Das Internet weiß es auch nicht ganz. Behandeln wir es einfach wie Padding.
+ * Die origin-Merker werden auf 1 gesetzt.
+ */
 struct buttons {
 	uint16_t a          : 1;
 	uint16_t b          : 1;
@@ -57,39 +63,58 @@ static struct {
 	} status;
 } id;
 
+/* 
+ * In der Entwicklung geht es nicht um das "Warum?", sondern um das "Warum nicht?".
+ * Warum muss ich die Variablen für die einzelnen Eingaben immer verschieden groß machen?
+ * Na warum nicht? Ansonsten würde die Programmierung ja leichter werden.
+ */
+ 
+ /*
+  * Danke Cave Johnson, jetzt übernehme ich. Unsere status-Struktur speichert die Eingsbe
+  * die wir an die Gamecube schicken wollen. Warum gibt es mehrere Modi? Diese Frage
+  * beantwortet ihnen wie immer gerne Cave Johnson.
+  */
 static struct {
-	struct buttons buttons;
-	struct { uint8_t x, y; } stick;
+	struct buttons buttons; //16 Bit
+	struct { uint8_t x, y; } stick; //32 Bit
 	union {
 		struct {
 			struct { uint8_t x : 8, y : 8; } substick;
 			struct { uint8_t r : 4, l : 4; } trigger;
 			struct { uint8_t b : 4, a : 4; } button;
-		} mode0;
+		} mode0; //64 Bit
 
 		struct {
 			struct { uint8_t y : 4, x : 4; } substick;
 			struct { uint8_t l : 8, r : 8; } trigger;
 			struct { uint8_t b : 4, a : 4; } button;
-		} mode1;
+		} mode1; //auch 64 Bit
 
 		struct {
 			struct { uint8_t y : 4, x : 4; } substick;
 			struct { uint8_t r : 4, l : 4; } trigger;
 			struct { uint8_t a : 8, b : 8; } button;
-		} mode2;
+		} mode2; //wieder 64 Bit
 
 		struct {
 			struct { uint8_t x, y; } substick;
 			struct { uint8_t l, r; } trigger;
-		} mode3;
+		} mode3; //nochmal 64 Bit
 
 		struct {
 			struct { uint8_t x, y; } substick;
 			struct { uint8_t a, b; } button;
-		} mode4;
+		} mode4; //uuuuund 64 Bit
 	};
 } status;
+/*
+ * Dear Extrems,
+ * DAFUQ is 10-byte mode? Where is 10-byte mode in this program?
+ * Do i know this program better than you, the creator?
+ * I wanted to know what these modes are for and you pull some
+ * gibberish about 10-byte out of your arse. Just tell me when you don't know.
+ * xoxo, Julia
+ */
 
 static struct {
 	struct buttons buttons;
@@ -105,6 +130,9 @@ static struct {
 
 static uint8_t buffer[128];
 
+/*
+ * Es gibt Module mit Rumble. WAAAAAAAAAS?
+ */
 static bool has_motor(void)
 {
 	if (0x96 == ROM[0xB2]) {
@@ -140,9 +168,11 @@ int IWRAM_CODE main(void)
 	Halt();
 
 	while (true) {
+		/* Hole Befehl von Gamecube ab */
 		int length = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
 		if (length < 9) continue;
 
+		/* Frage Buttons ab. Die origin-Variable speichert die Eingabe zwischen. */
 		unsigned buttons     = ~REG_KEYINPUT;
 		origin.buttons.a     = !!(buttons & KEY_A);
 		origin.buttons.b     = !!(buttons & KEY_B);
@@ -159,9 +189,11 @@ int IWRAM_CODE main(void)
 
 		switch (buffer[0]) {
 			case CMD_RESET:
+				/* Vibration ausschalten */
 				id.status.motor = MOTOR_STOP;
 			case CMD_ID:
 				if (length == 9) {
+					/* Gamecube mitteilen, dass Vibration zur Verfügung steht */
 					if (has_motor()) {
 						id.type[0] = 0x09;
 						id.type[1] = 0x00;
