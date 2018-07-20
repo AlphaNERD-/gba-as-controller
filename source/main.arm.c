@@ -28,6 +28,46 @@ enum {
 };
 
 /*
+ * Diese Struktur speichert die Eingaben vom GBA
+ */
+struct GBAButtons {
+	uint8_t Left : 1;
+	uint8_t Right : 1;
+	uint8_t Down : 1;
+	uint8_t Up : 1;
+	uint8_t A : 1;
+	uint8_t B : 1;
+	uint8_t L : 1;
+	uint8_t R : 1;
+	uint8_t Start : 1;
+	uint8_t Select : 1;
+} gbaButtons;
+
+/*
+ * Diese Struktur speichert die Eingabe für den Gamecube
+ */
+struct GCButtons {
+	uint8_t StickX;
+	uint8_t StickY;
+	uint8_t CStick_X;
+	uint8_t CStick_Y;
+	uint8_t LPressure;
+	uint8_t RPressure;
+	uint8_t Left : 1;
+	uint8_t Right : 1;
+	uint8_t Down : 1;
+	uint8_t Up : 1;
+	uint8_t A : 1;
+	uint8_t B : 1;
+	uint8_t X : 1;
+	uint8_t Y : 1;
+	uint8_t L : 1;
+	uint8_t Z : 1;
+	uint8_t R : 1;
+	uint8_t Start : 1;
+} gcButtons;
+
+/*
  * Liebe Julia. Spiel nicht an der Reihenfolge rum. Diese Reihenfolge braucht die
  * Gamecube. Und falls du dich fragst, wozu die Origin-Merker gut sind oder err_latch
  * und err_status... Das Internet weiß es auch nicht ganz. Behandeln wir es einfach wie Padding.
@@ -67,13 +107,11 @@ static struct {
  * In der Entwicklung geht es nicht um das "Warum?", sondern um das "Warum nicht?".
  * Warum muss ich die Variablen für die einzelnen Eingaben immer verschieden groß machen?
  * Na warum nicht? Ansonsten würde die Programmierung ja leichter werden.
+ *
+ * Danke Cave Johnson, jetzt übernehme ich. Unsere status-Struktur speichert die Eingsbe
+ * die wir an die Gamecube schicken wollen. Warum gibt es mehrere Modi? Diese Frage
+ * beantwortet ihnen wie immer gerne Cave Johnson.
  */
- 
- /*
-  * Danke Cave Johnson, jetzt übernehme ich. Unsere status-Struktur speichert die Eingsbe
-  * die wir an die Gamecube schicken wollen. Warum gibt es mehrere Modi? Diese Frage
-  * beantwortet ihnen wie immer gerne Cave Johnson.
-  */
 static struct {
 	struct buttons buttons; //16 Bit
 	struct { uint8_t x, y; } stick; //32 Bit
@@ -106,15 +144,7 @@ static struct {
 			struct { uint8_t a, b; } button;
 		} mode4; //uuuuund 64 Bit
 	};
-} status;
-/*
- * Dear Extrems,
- * DAFUQ is 10-byte mode? Where is 10-byte mode in this program?
- * Do i know this program better than you, the creator?
- * I wanted to know what these modes are for and you pull some
- * gibberish about 10-byte out of your arse. Just tell me when you don't know.
- * xoxo, Julia
- */
+} Response64;
 
 static struct {
 	struct buttons buttons;
@@ -122,11 +152,11 @@ static struct {
 	struct { uint8_t x, y; } substick;
 	struct { uint8_t l, r; } trigger;
 	struct { uint8_t a, b; } button;
-} origin = {
+} Response80 = {
 	.buttons  = { .use_origin = 1 },
 	.stick    = { 128, 128 },
 	.substick = { 128, 128 },
-};
+}; //Da sind meine 80 Bit. Warum, Nintendo?
 
 static uint8_t buffer[128];
 
@@ -151,8 +181,7 @@ static bool has_motor(void)
 void SISetResponse(const void *buf, unsigned bits);
 int SIGetCommand(void *buf, unsigned bits);
 
-int IWRAM_CODE main(void)
-{
+int IWRAM_CODE main(void) {
 	RegisterRamReset(RESET_ALL_REG);
 
 	REG_IE = IRQ_SERIAL | IRQ_TIMER2 | IRQ_TIMER1 | IRQ_TIMER0;
@@ -174,18 +203,18 @@ int IWRAM_CODE main(void)
 
 		/* Frage Buttons ab. Die origin-Variable speichert die Eingabe zwischen. */
 		unsigned buttons     = ~REG_KEYINPUT;
-		origin.buttons.a     = !!(buttons & KEY_A);
-		origin.buttons.b     = !!(buttons & KEY_B);
-		origin.buttons.z     = !!(buttons & KEY_SELECT);
-		origin.buttons.start = !!(buttons & KEY_START);
-		#ifndef ANALOG
-		origin.buttons.right = !!(buttons & KEY_RIGHT);
-		origin.buttons.left  = !!(buttons & KEY_LEFT);
-		origin.buttons.up    = !!(buttons & KEY_UP);
-		origin.buttons.down  = !!(buttons & KEY_DOWN);
-		#endif
-		origin.buttons.r     = !!(buttons & KEY_R);
-		origin.buttons.l     = !!(buttons & KEY_L);
+		gbaButtons.Right = !!(buttons & KEY_RIGHT);
+		gbaButtons.Left = !!(buttons & KEY_LEFT);
+		gbaButtons.Up = !!(buttons & KEY_UP);
+		gbaButtons.Down = !!(buttons & KEY_DOWN);
+		gbaButtons.A = !!(buttons & KEY_A);
+		gbaButtons.B = !!(buttons & KEY_B);
+		gbaButtons.L = !!(buttons & KEY_L);
+		gbaButtons.R = !!(buttons & KEY_R);
+		gbaButtons.Select = !!(buttons & KEY_SELECT);
+		gbaButtons.Start = !!(buttons & KEY_START);
+
+		MapInput();
 
 		switch (buffer[0]) {
 			case CMD_RESET:
@@ -210,9 +239,9 @@ int IWRAM_CODE main(void)
 					id.status.mode  = buffer[1];
 					id.status.motor = buffer[2];
 
-					status.buttons = origin.buttons;
-					status.stick.x = origin.stick.x;
-					status.stick.y = origin.stick.y;
+					Response64.buttons = Response80.buttons;
+					Response64.stick.x = Response80.stick.x;
+					Response64.stick.y = Response80.stick.y;
 					#ifdef ANALOG
 					if (buttons & KEY_RIGHT)
 						status.stick.x = origin.stick.x + 100;
@@ -226,48 +255,61 @@ int IWRAM_CODE main(void)
 
 					switch (id.status.mode) {
 						default:
-							status.mode0.substick.x = origin.substick.x;
-							status.mode0.substick.y = origin.substick.y;
-							status.mode0.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l) >> 4;
-							status.mode0.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r) >> 4;
-							status.mode0.button.a   = (buttons & KEY_A ? 200 : origin.button.a) >> 4;
-							status.mode0.button.b   = (buttons & KEY_B ? 200 : origin.button.b) >> 4;
+							Response64.mode0.substick.x = Response80.substick.x;
+							Response64.mode0.substick.y = Response80.substick.y;
+							Response64.mode0.trigger.l  = (buttons & KEY_L ? 200 : Response80.trigger.l) >> 4;
+							Response64.mode0.trigger.r  = (buttons & KEY_R ? 200 : Response80.trigger.r) >> 4;
+							Response64.mode0.button.a   = (buttons & KEY_A ? 200 : Response80.button.a) >> 4;
+							Response64.mode0.button.b   = (buttons & KEY_B ? 200 : Response80.button.b) >> 4;
 							break;
 						case 1:
-							status.mode1.substick.x = origin.substick.x >> 4;
-							status.mode1.substick.y = origin.substick.y >> 4;
-							status.mode1.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l);
-							status.mode1.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r);
-							status.mode1.button.a   = (buttons & KEY_A ? 200 : origin.button.a) >> 4;
-							status.mode1.button.b   = (buttons & KEY_B ? 200 : origin.button.b) >> 4;
+							Response64.mode1.substick.x = Response80.substick.x >> 4;
+							Response64.mode1.substick.y = Response80.substick.y >> 4;
+							Response64.mode1.trigger.l  = (buttons & KEY_L ? 200 : Response80.trigger.l);
+							Response64.mode1.trigger.r  = (buttons & KEY_R ? 200 : Response80.trigger.r);
+							Response64.mode1.button.a   = (buttons & KEY_A ? 200 : Response80.button.a) >> 4;
+							Response64.mode1.button.b   = (buttons & KEY_B ? 200 : Response80.button.b) >> 4;
 							break;
 						case 2:
-							status.mode2.substick.x = origin.substick.x >> 4;
-							status.mode2.substick.y = origin.substick.y >> 4;
-							status.mode2.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l) >> 4;
-							status.mode2.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r) >> 4;
-							status.mode2.button.a   = (buttons & KEY_A ? 200 : origin.button.a);
-							status.mode2.button.b   = (buttons & KEY_B ? 200 : origin.button.b);
+							Response64.mode2.substick.x = Response80.substick.x >> 4;
+							Response64.mode2.substick.y = Response80.substick.y >> 4;
+							Response64.mode2.trigger.l  = (buttons & KEY_L ? 200 : Response80.trigger.l) >> 4;
+							Response64.mode2.trigger.r  = (buttons & KEY_R ? 200 : Response80.trigger.r) >> 4;
+							Response64.mode2.button.a   = (buttons & KEY_A ? 200 : Response80.button.a);
+							Response64.mode2.button.b   = (buttons & KEY_B ? 200 : Response80.button.b);
 							break;
 						case 3:
-							status.mode3.substick.x = origin.substick.x;
-							status.mode3.substick.y = origin.substick.y;
-							status.mode3.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l);
-							status.mode3.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r);
+							Response64.mode3.substick.x = Response80.substick.x;
+							Response64.mode3.substick.y = Response80.substick.y;
+							Response64.mode3.trigger.l  = (buttons & KEY_L ? 200 : Response80.trigger.l);
+							Response64.mode3.trigger.r  = (buttons & KEY_R ? 200 : Response80.trigger.r);
 							break;
 						case 4:
-							status.mode4.substick.x = origin.substick.x;
-							status.mode4.substick.y = origin.substick.y;
-							status.mode4.button.a   = (buttons & KEY_A ? 200 : origin.button.a);
-							status.mode4.button.b   = (buttons & KEY_B ? 200 : origin.button.b);
+							Response64.mode4.substick.x = Response80.substick.x;
+							Response64.mode4.substick.y = Response80.substick.y;
+							Response64.mode4.button.a   = (buttons & KEY_A ? 200 : Response80.button.a);
+							Response64.mode4.button.b   = (buttons & KEY_B ? 200 : Response80.button.b);
 							break;
 					}
 
-					SISetResponse(&status, sizeof(status) * 8);
+					SISetResponse(&Response64, sizeof(Response64) * 8);
 				}
 				break;
 			case CMD_ORIGIN:
-				if (length == 9) SISetResponse(&origin, sizeof(origin) * 8);
+				Response80.buttons.a = !!(buttons & KEY_A);
+				Response80.buttons.b = !!(buttons & KEY_B);
+				Response80.buttons.z = !!(buttons & KEY_SELECT);
+				Response80.buttons.start = !!(buttons & KEY_START);
+				Response80.buttons.right = !!(buttons & KEY_RIGHT);
+				Response80.buttons.left = !!(buttons & KEY_LEFT);
+				Response80.buttons.up = !!(buttons & KEY_UP);
+				Response80.buttons.down = !!(buttons & KEY_DOWN);
+				Response80.buttons.r = !!(buttons & KEY_R);
+				Response80.buttons.l = !!(buttons & KEY_L);
+
+				if (length == 9) 
+					SISetResponse(&Response80, sizeof(Response80) * 8);
+
 				break;
 			case CMD_RECALIBRATE:
 			case CMD_STATUS_LONG:
@@ -275,7 +317,7 @@ int IWRAM_CODE main(void)
 					id.status.mode  = buffer[1];
 					id.status.motor = buffer[2];
 
-					SISetResponse(&origin, sizeof(origin) * 8);
+					SISetResponse(&Response80, sizeof(Response80) * 8);
 				}
 				break;
 		}
@@ -291,4 +333,17 @@ int IWRAM_CODE main(void)
 				break;
 		}
 	}
+}
+
+void MapInput(void) {
+	gbaButtons.Right = !!(buttons & KEY_RIGHT);
+	gbaButtons.Left = !!(buttons & KEY_LEFT);
+	gbaButtons.Up = !!(buttons & KEY_UP);
+	gbaButtons.Down = !!(buttons & KEY_DOWN);
+	gbaButtons.A = !!(buttons & KEY_A);
+	gbaButtons.B = !!(buttons & KEY_B);
+	gbaButtons.L = !!(buttons & KEY_L);
+	gbaButtons.R = !!(buttons & KEY_R);
+	gbaButtons.Select = !!(buttons & KEY_SELECT);
+	gbaButtons.Start = !!(buttons & KEY_START);
 }

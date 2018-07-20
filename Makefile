@@ -1,3 +1,6 @@
+export DEVKITPRO = /c/devkitPro
+export DEVKITARM = /c/devkitPro/devkitARM
+
 #---------------------------------------------------------------------------------
 # Clear the implicit built in rules
 #---------------------------------------------------------------------------------
