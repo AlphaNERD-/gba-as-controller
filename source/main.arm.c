@@ -10,6 +10,8 @@
 #define ROM_GPIODIR  *((uint16_t *)0x080000C6)
 #define ROM_GPIOCNT  *((uint16_t *)0x080000C8)
 
+#define MODIFIER_MASK ((uint8_t *)0x00FF)
+
 //#define ANALOG
 
 enum {
@@ -25,6 +27,28 @@ enum {
 	MOTOR_STOP = 0,
 	MOTOR_RUMBLE,
 	MOTOR_STOP_HARD
+};
+
+enum {
+	INPUT_DIRECTION = 0x0,
+	INPUT_BUTTON = 0x1,
+	INPUT_MODIFIER = 0x2
+};
+
+enum {
+	DiRECTION_LSTICK = 0x00,
+	DIRECTION_CSTICK = 0x01,
+	DIRECTION_DPAD = 0x02
+};
+
+enum {
+	BUTTON_A = 0x01,
+	BUTTON_B = 0x02,
+	BUTTON_X = 0x03,
+	BUTTON_Y = 0x04,
+	BUTTON_L = 0x05,
+	BUTTON_Z = 0x06,
+	BUTTON_R = 0x07
 };
 
 /*
@@ -44,13 +68,34 @@ struct GBAButtons {
 } gbaButtons;
 
 /*
+ * Diese Klasse ist der Unterschied zwischen ExtremsCorner's "Anwendung"
+ * und meiner göttlichen Kreation. Sie speichert die Tastenzuweisungen.
+ *
+ * Auf den ersten 4 Bit wird die Eingabe ohne Modifier gespeichert
+ * Auf den letzten 4 Bit wird die Eingabe mit Modifier gespeichert
+ *
+ * In jedem 4 Bit Satz geben die ersten 2 Bit die Eingabeart an.
+ * Die anderen 2 Bit stehen für die Eingabe selber.
+ */
+struct Mapper {
+	uint16_t DPad;
+	uint16_t A;
+	uint16_t B;
+	uint16_t L;
+	uint16_t R;
+	uint16_t Start;
+	uint16_t Select;
+} mapSettings;
+
+
+/*
  * Diese Struktur speichert die Eingabe für den Gamecube
  */
 struct GCButtons {
-	uint8_t StickX;
-	uint8_t StickY;
-	uint8_t CStick_X;
-	uint8_t CStick_Y;
+	int8_t StickX;
+	int8_t StickY;
+	int8_t CStick_X;
+	int8_t CStick_Y;
 	uint8_t LPressure;
 	uint8_t RPressure;
 	uint8_t Left : 1;
@@ -196,6 +241,8 @@ int IWRAM_CODE main(void) {
 	SoundBias(0);
 	Halt();
 
+	mapSettings.DPad = 0x
+
 	while (true) {
 		/* Hole Befehl von Gamecube ab */
 		int length = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
@@ -335,15 +382,80 @@ int IWRAM_CODE main(void) {
 	}
 }
 
-void MapInput(void) {
-	gbaButtons.Right = !!(buttons & KEY_RIGHT);
-	gbaButtons.Left = !!(buttons & KEY_LEFT);
-	gbaButtons.Up = !!(buttons & KEY_UP);
-	gbaButtons.Down = !!(buttons & KEY_DOWN);
-	gbaButtons.A = !!(buttons & KEY_A);
-	gbaButtons.B = !!(buttons & KEY_B);
-	gbaButtons.L = !!(buttons & KEY_L);
-	gbaButtons.R = !!(buttons & KEY_R);
-	gbaButtons.Select = !!(buttons & KEY_SELECT);
-	gbaButtons.Start = !!(buttons & KEY_START);
+void MapButton(uint8_t currentButton) {
+	if ((currentButton & 0xF) == INPUT_BUTTON)
+	{
+		if ((currentButton & 0x0F) != BUTTON_A)
+			gcButtons.A = 1;
+
+		if ((currentButton & 0x0F) != BUTTON_B)
+			gcButtons.B = 1;
+
+		if ((currentButton & 0x0F) != BUTTON_X)
+			gcButtons.X = 1;
+
+		if ((currentButton & 0x0F) != BUTTON_Y)
+			gcButtons.Y = 1;
+
+		if ((currentButton & 0x0F) != BUTTON_Z)
+			gcButtons.Z = 1;
+
+		if ((currentButton & 0x0F) != BUTTON_L)
+		{
+			gcButtons.L = 1;
+			gcButtons.LPressure = 127;
+		}
+
+		if ((currentButton & 0x0F) != BUTTON_R)
+		{
+			gcButtons.R = 1;
+			gcButtons.RPressure = 127;
+		}
+	}
+
+	void MapDPad(void) {
+		if ((Mapper.DPad & 0xF) == INPUT_DIRECTION)
+		{
+			if ((Mapper.DPad & 0x0F) == DiRECTION_LSTICK)
+			{
+				if (gbaButtons.Right != 0)
+					gcButtons.StickX = 100;
+				else if (gbaButtons.Left != 0)
+					gcButtons.StickX = -100;
+
+				if (gbaButtons.Up != 0)
+					gcButtons.StickY = 100;
+				else if (gbaButtons.Down != 0)
+					gcButtons.StickY = -100;
+			}
+
+			if ((Mapper.DPad & 0x0F) == DiRECTION_CSTICK)
+			{
+				if (gbaButtons.Right != 0)
+					gcButtons.CStickX = 100;
+				else if (gbaButtons.Left != 0)
+					gcButtons.CStickX = -100;
+
+				if (gbaButtons.Up != 0)
+					gcButtons.CStickY = 100;
+				else if (gbaButtons.Down != 0)
+					gcButtons.CStickY = -100;
+			}
+
+			if ((Mapper.DPad & 0x0F) == DIRECTION_DPAD)
+			{
+				if (gbaButtons.Right != 0)
+					gcButtons.Right = 1;
+
+				if (gbaButtons.Left != 0)
+					gcButtons.Left = 1;
+
+				if (gbaButtons.Up != 0)
+					gcButtons.Up = 1;
+
+				if (gbaButtons.Down != 0)
+					gcButtons.Down = 1;
+			}
+		}
+	}
 }
