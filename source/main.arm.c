@@ -12,8 +12,6 @@
 
 #define MODIFIER_MASK ((uint8_t *)0x00FF)
 
-//#define ANALOG
-
 enum {
 	CMD_ID = 0x00,
 	CMD_STATUS = 0x40,
@@ -36,7 +34,7 @@ enum {
 };
 
 enum {
-	DiRECTION_LSTICK = 0x00,
+	DIRECTION_LSTICK = 0x00,
 	DIRECTION_CSTICK = 0x01,
 	DIRECTION_DPAD = 0x02
 };
@@ -54,7 +52,7 @@ enum {
 /*
  * Diese Struktur speichert die Eingaben vom GBA
  */
-struct GBAButtons {
+static struct {
 	uint8_t Left : 1;
 	uint8_t Right : 1;
 	uint8_t Down : 1;
@@ -77,7 +75,7 @@ struct GBAButtons {
  * In jedem 4 Bit Satz geben die ersten 2 Bit die Eingabeart an.
  * Die anderen 2 Bit stehen für die Eingabe selber.
  */
-struct Mapper {
+static struct {
 	uint16_t DPad;
 	uint16_t A;
 	uint16_t B;
@@ -91,11 +89,11 @@ struct Mapper {
 /*
  * Diese Struktur speichert die Eingabe für den Gamecube
  */
-struct GCButtons {
+static struct {
 	int8_t StickX;
 	int8_t StickY;
-	int8_t CStick_X;
-	int8_t CStick_Y;
+	int8_t CStickX;
+	int8_t CStickY;
 	uint8_t LPressure;
 	uint8_t RPressure;
 	uint8_t Left : 1;
@@ -191,17 +189,21 @@ static struct {
 	};
 } Response64;
 
+/*
+ * Die vorher als Response80 bekannte Origin-Klasse hat nur den Zweck
+ * sich den Ausgangszustand des Controllers zu merken.
+ */
 static struct {
 	struct buttons buttons;
 	struct { uint8_t x, y; } stick;
 	struct { uint8_t x, y; } substick;
 	struct { uint8_t l, r; } trigger;
 	struct { uint8_t a, b; } button;
-} Response80 = {
+} Origin = {
 	.buttons  = { .use_origin = 1 },
 	.stick    = { 128, 128 },
 	.substick = { 128, 128 },
-}; //Da sind meine 80 Bit. Warum, Nintendo?
+};
 
 static uint8_t buffer[128];
 
@@ -241,8 +243,6 @@ int IWRAM_CODE main(void) {
 	SoundBias(0);
 	Halt();
 
-	mapSettings.DPad = 0x
-
 	while (true) {
 		/* Hole Befehl von Gamecube ab */
 		int length = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
@@ -261,7 +261,13 @@ int IWRAM_CODE main(void) {
 		gbaButtons.Select = !!(buttons & KEY_SELECT);
 		gbaButtons.Start = !!(buttons & KEY_START);
 
-		MapInput();
+		MapDPad();
+		MapButton(gbaButtons.A, mapSettings.A);
+		MapButton(gbaButtons.B, mapSettings.B);
+		MapButton(gbaButtons.L, mapSettings.L);
+		MapButton(gbaButtons.R, mapSettings.R);
+		MapButton(gbaButtons.Start, mapSettings.Start);
+		MapButton(gbaButtons.Select, mapSettings.Select);
 
 		switch (buffer[0]) {
 			case CMD_RESET:
@@ -286,56 +292,55 @@ int IWRAM_CODE main(void) {
 					id.status.mode  = buffer[1];
 					id.status.motor = buffer[2];
 
-					Response64.buttons = Response80.buttons;
-					Response64.stick.x = Response80.stick.x;
-					Response64.stick.y = Response80.stick.y;
-					#ifdef ANALOG
-					if (buttons & KEY_RIGHT)
-						status.stick.x = origin.stick.x + 100;
-					else if (buttons & KEY_LEFT)
-						status.stick.x = origin.stick.x - 100;
-					if (buttons & KEY_UP)
-						status.stick.y = origin.stick.y + 100;
-					else if (buttons & KEY_DOWN)
-						status.stick.y = origin.stick.y - 100;
-					#endif
+					Response64.buttons.a = gcButtons.A;
+					Response64.buttons.b = gcButtons.B;
+					Response64.buttons.z = gcButtons.Z;
+					Response64.buttons.start = gcButtons.Start;
+					Response64.buttons.right = gcButtons.Right;
+					Response64.buttons.left = gcButtons.Left;
+					Response64.buttons.up = gcButtons.Up;
+					Response64.buttons.down = gcButtons.Down;
+					Response64.buttons.r = gcButtons.R;
+					Response64.buttons.l = gcButtons.L;
+					Response64.stick.x = gcButtons.StickX;
+					Response64.stick.y = gcButtons.StickY;
 
 					switch (id.status.mode) {
 						default:
-							Response64.mode0.substick.x = Response80.substick.x;
-							Response64.mode0.substick.y = Response80.substick.y;
-							Response64.mode0.trigger.l  = (buttons & KEY_L ? 200 : Response80.trigger.l) >> 4;
-							Response64.mode0.trigger.r  = (buttons & KEY_R ? 200 : Response80.trigger.r) >> 4;
-							Response64.mode0.button.a   = (buttons & KEY_A ? 200 : Response80.button.a) >> 4;
-							Response64.mode0.button.b   = (buttons & KEY_B ? 200 : Response80.button.b) >> 4;
+							Response64.mode0.substick.x = gcButtons.CStickX;
+							Response64.mode0.substick.y = gcButtons.CStickY;
+							Response64.mode0.trigger.l  = gcButtons.LPressure >> 4;
+							Response64.mode0.trigger.r  = gcButtons.RPressure >> 4;
+							Response64.mode0.button.a   = gcButtons.A >> 4;
+							Response64.mode0.button.b   = gcButtons.B >> 4;
 							break;
 						case 1:
-							Response64.mode1.substick.x = Response80.substick.x >> 4;
-							Response64.mode1.substick.y = Response80.substick.y >> 4;
-							Response64.mode1.trigger.l  = (buttons & KEY_L ? 200 : Response80.trigger.l);
-							Response64.mode1.trigger.r  = (buttons & KEY_R ? 200 : Response80.trigger.r);
-							Response64.mode1.button.a   = (buttons & KEY_A ? 200 : Response80.button.a) >> 4;
-							Response64.mode1.button.b   = (buttons & KEY_B ? 200 : Response80.button.b) >> 4;
+							Response64.mode1.substick.x = gcButtons.CStickX >> 4;
+							Response64.mode1.substick.y = gcButtons.CStickY >> 4;
+							Response64.mode1.trigger.l  = gcButtons.LPressure;
+							Response64.mode1.trigger.r  = gcButtons.RPressure;
+							Response64.mode1.button.a   = gcButtons.A >> 4;
+							Response64.mode1.button.b   = gcButtons.B >> 4;
 							break;
 						case 2:
-							Response64.mode2.substick.x = Response80.substick.x >> 4;
-							Response64.mode2.substick.y = Response80.substick.y >> 4;
-							Response64.mode2.trigger.l  = (buttons & KEY_L ? 200 : Response80.trigger.l) >> 4;
-							Response64.mode2.trigger.r  = (buttons & KEY_R ? 200 : Response80.trigger.r) >> 4;
-							Response64.mode2.button.a   = (buttons & KEY_A ? 200 : Response80.button.a);
-							Response64.mode2.button.b   = (buttons & KEY_B ? 200 : Response80.button.b);
+							Response64.mode2.substick.x = gcButtons.CStickX >> 4;
+							Response64.mode2.substick.y = gcButtons.CStickY >> 4;
+							Response64.mode2.trigger.l  = gcButtons.LPressure >> 4;
+							Response64.mode2.trigger.r  = gcButtons.RPressure >> 4;
+							Response64.mode2.button.a   = gcButtons.A;
+							Response64.mode2.button.b   = gcButtons.B;
 							break;
 						case 3:
-							Response64.mode3.substick.x = Response80.substick.x;
-							Response64.mode3.substick.y = Response80.substick.y;
-							Response64.mode3.trigger.l  = (buttons & KEY_L ? 200 : Response80.trigger.l);
-							Response64.mode3.trigger.r  = (buttons & KEY_R ? 200 : Response80.trigger.r);
+							Response64.mode3.substick.x = gcButtons.CStickX;
+							Response64.mode3.substick.y = gcButtons.CStickY;
+							Response64.mode3.trigger.l  = gcButtons.LPressure;
+							Response64.mode3.trigger.r  = gcButtons.RPressure;
 							break;
 						case 4:
-							Response64.mode4.substick.x = Response80.substick.x;
-							Response64.mode4.substick.y = Response80.substick.y;
-							Response64.mode4.button.a   = (buttons & KEY_A ? 200 : Response80.button.a);
-							Response64.mode4.button.b   = (buttons & KEY_B ? 200 : Response80.button.b);
+							Response64.mode4.substick.x = gcButtons.CStickX;
+							Response64.mode4.substick.y = gcButtons.CStickY;
+							Response64.mode4.button.a   = gcButtons.A;
+							Response64.mode4.button.b   = gcButtons.B;
 							break;
 					}
 
@@ -343,19 +348,19 @@ int IWRAM_CODE main(void) {
 				}
 				break;
 			case CMD_ORIGIN:
-				Response80.buttons.a = !!(buttons & KEY_A);
-				Response80.buttons.b = !!(buttons & KEY_B);
-				Response80.buttons.z = !!(buttons & KEY_SELECT);
-				Response80.buttons.start = !!(buttons & KEY_START);
-				Response80.buttons.right = !!(buttons & KEY_RIGHT);
-				Response80.buttons.left = !!(buttons & KEY_LEFT);
-				Response80.buttons.up = !!(buttons & KEY_UP);
-				Response80.buttons.down = !!(buttons & KEY_DOWN);
-				Response80.buttons.r = !!(buttons & KEY_R);
-				Response80.buttons.l = !!(buttons & KEY_L);
+				Origin.buttons.a = gcButtons.A;
+				Origin.buttons.b = gcButtons.B;
+				Origin.buttons.z = gcButtons.Z;
+				Origin.buttons.start = gcButtons.Start;
+				Origin.buttons.right = gcButtons.Right;
+				Origin.buttons.left = gcButtons.Left;
+				Origin.buttons.up = gcButtons.Up;
+				Origin.buttons.down = gcButtons.Down;
+				Origin.buttons.r = gcButtons.R;
+				Origin.buttons.l = gcButtons.L;
 
 				if (length == 9) 
-					SISetResponse(&Response80, sizeof(Response80) * 8);
+					SISetResponse(&Origin, sizeof(Origin) * 8);
 
 				break;
 			case CMD_RECALIBRATE:
@@ -364,7 +369,7 @@ int IWRAM_CODE main(void) {
 					id.status.mode  = buffer[1];
 					id.status.motor = buffer[2];
 
-					SISetResponse(&Response80, sizeof(Response80) * 8);
+					SISetResponse(&Origin, sizeof(Origin) * 8);
 				}
 				break;
 		}
@@ -382,80 +387,116 @@ int IWRAM_CODE main(void) {
 	}
 }
 
-void MapButton(uint8_t currentButton) {
-	if ((currentButton & 0xF) == INPUT_BUTTON)
+void MapButton(uint8_t currentButton, uint16_t mapCommand) {
+	if ((mapCommand & 0xF) == INPUT_BUTTON)
 	{
-		if ((currentButton & 0x0F) != BUTTON_A)
+		if ((mapCommand & 0x0F) == BUTTON_A)
 			gcButtons.A = 1;
+		else
+			gcButtons.A = 0;
 
-		if ((currentButton & 0x0F) != BUTTON_B)
+		if ((mapCommand & 0x0F) == BUTTON_B)
 			gcButtons.B = 1;
+		else
+			gcButtons.B = 0;
 
-		if ((currentButton & 0x0F) != BUTTON_X)
+		if ((mapCommand & 0x0F) == BUTTON_X)
 			gcButtons.X = 1;
+		else
+			gcButtons.X = 0;
 
-		if ((currentButton & 0x0F) != BUTTON_Y)
+		if ((mapCommand & 0x0F) == BUTTON_Y)
 			gcButtons.Y = 1;
+		else
+			gcButtons.Y = 0;
 
-		if ((currentButton & 0x0F) != BUTTON_Z)
+		if ((mapCommand & 0x0F) == BUTTON_Z)
 			gcButtons.Z = 1;
+		else
+			gcButtons.Z = 0;
 
-		if ((currentButton & 0x0F) != BUTTON_L)
+		if ((mapCommand & 0x0F) == BUTTON_L)
 		{
 			gcButtons.L = 1;
-			gcButtons.LPressure = 127;
+			gcButtons.LPressure = 200;
+		}
+		else
+		{
+			gcButtons.L = 0;
+			gcButtons.LPressure = 0;
 		}
 
-		if ((currentButton & 0x0F) != BUTTON_R)
+		if ((mapCommand & 0x0F) != BUTTON_R)
 		{
 			gcButtons.R = 1;
-			gcButtons.RPressure = 127;
+			gcButtons.RPressure = 200;
+		}
+		else
+		{
+			gcButtons.R = 0;
+			gcButtons.RPressure = 0;
 		}
 	}
+}
 
-	void MapDPad(void) {
-		if ((Mapper.DPad & 0xF) == INPUT_DIRECTION)
+void MapDPad(void) {
+	if ((mapSettings.DPad & 0xF) == INPUT_DIRECTION)
+	{
+		if ((mapSettings.DPad & 0x0F) == DIRECTION_LSTICK)
 		{
-			if ((Mapper.DPad & 0x0F) == DiRECTION_LSTICK)
-			{
-				if (gbaButtons.Right != 0)
-					gcButtons.StickX = 100;
-				else if (gbaButtons.Left != 0)
-					gcButtons.StickX = -100;
+			if (gbaButtons.Right != 0)
+				gcButtons.StickX = 100;
+			else if (gbaButtons.Left != 0)
+				gcButtons.StickX = -100;
+			else
+				gcButtons.StickX = 0;
 
-				if (gbaButtons.Up != 0)
-					gcButtons.StickY = 100;
-				else if (gbaButtons.Down != 0)
-					gcButtons.StickY = -100;
-			}
+			if (gbaButtons.Up != 0)
+				gcButtons.StickY = 100;
+			else if (gbaButtons.Down != 0)
+				gcButtons.StickY = -100;
+			else
+				gcButtons.StickY = 0;
+		}
 
-			if ((Mapper.DPad & 0x0F) == DiRECTION_CSTICK)
-			{
-				if (gbaButtons.Right != 0)
-					gcButtons.CStickX = 100;
-				else if (gbaButtons.Left != 0)
-					gcButtons.CStickX = -100;
+		if ((mapSettings.DPad & 0x0F) == DIRECTION_CSTICK)
+		{
+			if (gbaButtons.Right != 0)
+				gcButtons.CStickX = 100;
+			else if (gbaButtons.Left != 0)
+				gcButtons.CStickX = -100;
+			else
+				gcButtons.CStickX = 0;
 
-				if (gbaButtons.Up != 0)
-					gcButtons.CStickY = 100;
-				else if (gbaButtons.Down != 0)
-					gcButtons.CStickY = -100;
-			}
+			if (gbaButtons.Up != 0)
+				gcButtons.CStickY = 100;
+			else if (gbaButtons.Down != 0)
+				gcButtons.CStickY = -100;
+			else
+				gcButtons.CStickY = 0;
+		}
 
-			if ((Mapper.DPad & 0x0F) == DIRECTION_DPAD)
-			{
-				if (gbaButtons.Right != 0)
-					gcButtons.Right = 1;
+		if ((mapSettings.DPad & 0x0F) == DIRECTION_DPAD)
+		{
+			if (gbaButtons.Right != 0)
+				gcButtons.Right = 1;
+			else
+				gcButtons.Right = 0;
 
-				if (gbaButtons.Left != 0)
-					gcButtons.Left = 1;
+			if (gbaButtons.Left != 0)
+				gcButtons.Left = 1;
+			else
+				gcButtons.Left = 0;
 
-				if (gbaButtons.Up != 0)
-					gcButtons.Up = 1;
+			if (gbaButtons.Up != 0)
+				gcButtons.Up = 1;
+			else
+				gcButtons.Up = 0;
 
-				if (gbaButtons.Down != 0)
-					gcButtons.Down = 1;
-			}
+			if (gbaButtons.Down != 0)
+				gcButtons.Down = 1;
+			else
+				gcButtons.Down = 0;
 		}
 	}
 }
