@@ -3,3 +3,4 @@ build
 *.user
 *.elf
 *.gba
+VBA-SDL

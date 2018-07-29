@@ -34,9 +34,9 @@ enum {
 };
 
 enum {
-	DIRECTION_LSTICK = 0x00,
-	DIRECTION_CSTICK = 0x01,
-	DIRECTION_DPAD = 0x02
+	DIRECTION_LSTICK = 0x0,
+	DIRECTION_CSTICK = 0x1,
+	DIRECTION_DPAD = 0x2
 };
 
 enum {
@@ -46,7 +46,8 @@ enum {
 	BUTTON_Y = 0x04,
 	BUTTON_L = 0x05,
 	BUTTON_Z = 0x06,
-	BUTTON_R = 0x07
+	BUTTON_R = 0x07,
+	BUTTON_START = 0x08
 };
 
 /*
@@ -82,7 +83,7 @@ static struct {
 	uint16_t L;
 	uint16_t R;
 	uint16_t Start;
-	uint16_t Select;
+	uint8_t Select; //Select wird (vorerst) als Modifier fest programmiert. Das bedeutet, dass Select
 } mapSettings;
 
 
@@ -90,10 +91,10 @@ static struct {
  * Diese Struktur speichert die Eingabe für den Gamecube
  */
 static struct {
-	int8_t StickX;
-	int8_t StickY;
-	int8_t CStickX;
-	int8_t CStickY;
+	uint8_t StickX;
+	uint8_t StickY;
+	uint8_t CStickX;
+	uint8_t CStickY;
 	uint8_t LPressure;
 	uint8_t RPressure;
 	uint8_t Left : 1;
@@ -207,6 +208,8 @@ static struct {
 
 static uint8_t buffer[128];
 
+static bool modifierActive = false;
+
 /*
  * Es gibt Module mit Rumble. WAAAAAAAAAS?
  */
@@ -243,6 +246,14 @@ int IWRAM_CODE main(void) {
 	SoundBias(0);
 	Halt();
 
+	mapSettings.DPad = 0x0001;
+	mapSettings.A = 0x1113;
+	mapSettings.B = 0x1214;
+	mapSettings.L = 0x1515;
+	mapSettings.R = 0x1716;
+	mapSettings.Start = 0x1818;
+	mapSettings.Select = 0x20;
+
 	while (true) {
 		/* Hole Befehl von Gamecube ab */
 		int length = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
@@ -261,13 +272,25 @@ int IWRAM_CODE main(void) {
 		gbaButtons.Select = !!(buttons & KEY_SELECT);
 		gbaButtons.Start = !!(buttons & KEY_START);
 
+		ResetResponse();
+
+		MapSelect(mapSettings.Select); //Zuerst verarbeiten, da Select als Modifier dient.
 		MapDPad();
-		MapButton(gbaButtons.A, mapSettings.A);
-		MapButton(gbaButtons.B, mapSettings.B);
-		MapButton(gbaButtons.L, mapSettings.L);
-		MapButton(gbaButtons.R, mapSettings.R);
-		MapButton(gbaButtons.Start, mapSettings.Start);
-		MapButton(gbaButtons.Select, mapSettings.Select);
+
+		if (gbaButtons.A != 0)
+			MapButton(mapSettings.A);
+
+		if (gbaButtons.B != 0)
+			MapButton(mapSettings.B);
+
+		if (gbaButtons.L != 0)
+			MapButton(mapSettings.L);
+
+		if (gbaButtons.R != 0)
+			MapButton(mapSettings.R);
+
+		if (gbaButtons.Start != 0)
+			MapButton(mapSettings.Start);
 
 		switch (buffer[0]) {
 			case CMD_RESET:
@@ -387,116 +410,116 @@ int IWRAM_CODE main(void) {
 	}
 }
 
-void MapButton(uint8_t currentButton, uint16_t mapCommand) {
-	if ((mapCommand & 0xF) == INPUT_BUTTON)
+void ResetResponse() {
+	gcButtons.A = Origin.buttons.a;
+	gcButtons.B = Origin.buttons.b;
+	gcButtons.X = Origin.buttons.x;
+	gcButtons.Y = Origin.buttons.y;
+	gcButtons.Z = Origin.buttons.z;
+	gcButtons.Start = Origin.buttons.start;
+	gcButtons.Right = Origin.buttons.right;
+	gcButtons.Left = Origin.buttons.left;
+	gcButtons.Up = Origin.buttons.up;
+	gcButtons.Down = Origin.buttons.down;
+	gcButtons.R = Origin.buttons.r;
+	gcButtons.L = Origin.buttons.l;
+	gcButtons.RPressure = Origin.trigger.r;
+	gcButtons.LPressure = Origin.trigger.l;
+	gcButtons.StickX = Origin.stick.x;
+	gcButtons.StickY = Origin.stick.y;
+	gcButtons.CStickX = Origin.substick.x;
+	gcButtons.CStickY = Origin.substick.y;
+}
+
+void MapSelect(uint8_t mapCommand) {
+	if ((mapCommand & 0xF0) == INPUT_MODIFIER)
+		if (gbaButtons.Select != 0)
+			modifierActive = true;
+		else
+			modifierActive = false;
+	else if ((mapCommand & 0xF) == INPUT_BUTTON)
+		MapButton(gbaButtons.Select, mapSettings.Select);
+}
+
+void MapButton(uint16_t mapperLine) {
+	uint8_t mapCommand = modifierActive ? (mapperLine & 0x00FF) : ((mapperLine & 0xFF00) >> 8);
+
+	if ((mapCommand & 0xF0) == INPUT_BUTTON)
 	{
 		if ((mapCommand & 0x0F) == BUTTON_A)
 			gcButtons.A = 1;
-		else
-			gcButtons.A = 0;
 
 		if ((mapCommand & 0x0F) == BUTTON_B)
 			gcButtons.B = 1;
-		else
-			gcButtons.B = 0;
 
 		if ((mapCommand & 0x0F) == BUTTON_X)
 			gcButtons.X = 1;
-		else
-			gcButtons.X = 0;
 
 		if ((mapCommand & 0x0F) == BUTTON_Y)
 			gcButtons.Y = 1;
-		else
-			gcButtons.Y = 0;
 
 		if ((mapCommand & 0x0F) == BUTTON_Z)
 			gcButtons.Z = 1;
-		else
-			gcButtons.Z = 0;
 
 		if ((mapCommand & 0x0F) == BUTTON_L)
 		{
 			gcButtons.L = 1;
 			gcButtons.LPressure = 200;
 		}
-		else
-		{
-			gcButtons.L = 0;
-			gcButtons.LPressure = 0;
-		}
 
-		if ((mapCommand & 0x0F) != BUTTON_R)
+		if ((mapCommand & 0x0F) == BUTTON_R)
 		{
 			gcButtons.R = 1;
 			gcButtons.RPressure = 200;
 		}
-		else
-		{
-			gcButtons.R = 0;
-			gcButtons.RPressure = 0;
-		}
+
+		if ((mapCommand & 0x0F) == BUTTON_START)
+			gcButtons.Start = 1;
 	}
 }
 
-void MapDPad(void) {
-	if ((mapSettings.DPad & 0xF) == INPUT_DIRECTION)
+void MapDPad(uint8_t mapCommand) {
+	if ((mapCommand & 0xF) == INPUT_DIRECTION)
 	{
-		if ((mapSettings.DPad & 0x0F) == DIRECTION_LSTICK)
+		if ((mapCommand & 0x0F) == DIRECTION_LSTICK)
 		{
 			if (gbaButtons.Right != 0)
-				gcButtons.StickX = 100;
+				gcButtons.StickX = 255;
 			else if (gbaButtons.Left != 0)
-				gcButtons.StickX = -100;
-			else
 				gcButtons.StickX = 0;
 
 			if (gbaButtons.Up != 0)
-				gcButtons.StickY = 100;
+				gcButtons.StickY = 255;
 			else if (gbaButtons.Down != 0)
-				gcButtons.StickY = -100;
-			else
 				gcButtons.StickY = 0;
 		}
 
-		if ((mapSettings.DPad & 0x0F) == DIRECTION_CSTICK)
+		if ((mapCommand & 0x0F) == DIRECTION_CSTICK)
 		{
 			if (gbaButtons.Right != 0)
-				gcButtons.CStickX = 100;
+				gcButtons.CStickX = 255;
 			else if (gbaButtons.Left != 0)
-				gcButtons.CStickX = -100;
-			else
 				gcButtons.CStickX = 0;
 
 			if (gbaButtons.Up != 0)
-				gcButtons.CStickY = 100;
+				gcButtons.CStickY = 255;
 			else if (gbaButtons.Down != 0)
-				gcButtons.CStickY = -100;
-			else
 				gcButtons.CStickY = 0;
 		}
 
-		if ((mapSettings.DPad & 0x0F) == DIRECTION_DPAD)
+		if ((mapCommand & 0x0F) == DIRECTION_DPAD)
 		{
 			if (gbaButtons.Right != 0)
 				gcButtons.Right = 1;
-			else
-				gcButtons.Right = 0;
 
 			if (gbaButtons.Left != 0)
 				gcButtons.Left = 1;
-			else
-				gcButtons.Left = 0;
 
 			if (gbaButtons.Up != 0)
 				gcButtons.Up = 1;
-			else
-				gcButtons.Up = 0;
 
 			if (gbaButtons.Down != 0)
 				gcButtons.Down = 1;
-			else
-				gcButtons.Down = 0;
 		}
 	}
 }
