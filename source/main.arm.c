@@ -28,9 +28,9 @@ enum {
 };
 
 enum {
-	INPUT_DIRECTION = 0x0,
-	INPUT_BUTTON = 0x1,
-	INPUT_MODIFIER = 0x2
+	INPUT_DIRECTION = 0x00,
+	INPUT_BUTTON = 0x10,
+	INPUT_MODIFIER = 0x20
 };
 
 enum {
@@ -275,7 +275,7 @@ int IWRAM_CODE main(void) {
 		ResetResponse();
 
 		MapSelect(mapSettings.Select); //Zuerst verarbeiten, da Select als Modifier dient.
-		MapDPad();
+		MapDPad(mapSettings.DPad);
 
 		if (gbaButtons.A != 0)
 			MapButton(mapSettings.A);
@@ -317,6 +317,8 @@ int IWRAM_CODE main(void) {
 
 					Response64.buttons.a = gcButtons.A;
 					Response64.buttons.b = gcButtons.B;
+					Response64.buttons.x = gcButtons.X;
+					Response64.buttons.y = gcButtons.Y;
 					Response64.buttons.z = gcButtons.Z;
 					Response64.buttons.start = gcButtons.Start;
 					Response64.buttons.right = gcButtons.Right;
@@ -373,6 +375,8 @@ int IWRAM_CODE main(void) {
 			case CMD_ORIGIN:
 				Origin.buttons.a = gcButtons.A;
 				Origin.buttons.b = gcButtons.B;
+				Origin.buttons.x = gcButtons.X;
+				Origin.buttons.y = gcButtons.Y;
 				Origin.buttons.z = gcButtons.Z;
 				Origin.buttons.start = gcButtons.Start;
 				Origin.buttons.right = gcButtons.Right;
@@ -437,7 +441,7 @@ void MapSelect(uint8_t mapCommand) {
 			modifierActive = true;
 		else
 			modifierActive = false;
-	else if ((mapCommand & 0xF) == INPUT_BUTTON)
+	else if ((mapCommand & 0xF0) == INPUT_BUTTON)
 		MapButton(gbaButtons.Select, mapSettings.Select);
 }
 
@@ -478,8 +482,10 @@ void MapButton(uint16_t mapperLine) {
 	}
 }
 
-void MapDPad(uint8_t mapCommand) {
-	if ((mapCommand & 0xF) == INPUT_DIRECTION)
+void MapDPad(uint16_t mapperLine) {
+	uint8_t mapCommand = modifierActive ? (mapperLine & 0x00FF) : ((mapperLine & 0xFF00) >> 8);
+
+	if ((mapCommand & 0xF0) == INPUT_DIRECTION)
 	{
 		if ((mapCommand & 0x0F) == DIRECTION_LSTICK)
 		{
